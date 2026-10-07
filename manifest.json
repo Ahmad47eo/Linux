@@ -1,0 +1,17 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "My Bedrock Pack",
+    "description": "Custom Minecraft Bedrock Pack",
+    "uuid": "7d4b6e2a-9f31-4c58-a8e7-2b6d1f9034c5",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 20, 0]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "c83f2917-5a64-42e9-bd13-6f8a2047e1d2",
+      "version": [1, 0, 0]
+    }
+  ]
+}
