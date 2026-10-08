@@ -1,12 +1,21 @@
-﻿# Runtime architecture
+# Architecture
 
-The project targets iOS/iPadOS and is intended for user-owned software.
+## App layer
 
-## Layers
-1. SwiftUI launcher and profile manager.
-2. Java runtime manager for Java 8/17/21.
-3. Windows compatibility backend based on open-source Wine/FEX-style components.
-4. File importer for user-provided EXE/JAR files.
-5. JIT integration through the user's supported sideloading/JIT workflow.
+SwiftUI provides the launcher, profile list, runtime selector, and Files.app import UI.
 
-The first milestone is a buildable UI shell. Runtime binaries and compatibility components will be integrated separately with their licenses preserved.
+## Storage
+
+Imported applications and runtime profiles are stored in the app's Application Support container. Profiles are JSON and point to imported filenames rather than external URLs.
+
+## Java layer
+
+`JavaRuntimeManager` manages Java 8/17/21 runtime directories. The runtime backend is abstract so the UI does not depend on one VM implementation.
+
+## Windows layer
+
+`WindowsBackend` is an abstraction for an eventual in-process Wine/FEX compatibility layer. The backend must be integrated into the app process rather than relying on a normal child-process model.
+
+## Security and licensing
+
+The project only imports files supplied by the user. It does not bypass ownership checks, download pirated software, or bundle proprietary games.
