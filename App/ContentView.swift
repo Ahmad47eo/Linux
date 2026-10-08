@@ -5,7 +5,8 @@ struct ContentView: View {
     @State private var selectedRuntime: RuntimeKind = .java8
     @State private var importedFiles: [RuntimeProfile] = []
     @State private var status = "Ready"
-    @State private var showingImporter = false
+    @State private var showingFileImporter = false
+    @State private var showingRuntimeImporter = false
     @State private var showingError = false
     @State private var errorMessage = ""
 
@@ -14,20 +15,25 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Runtime") {
+                Section("Java runtime") {
                     Picker("Runtime", selection: $selectedRuntime) {
-                        ForEach(RuntimeKind.allCases, id: \.self) { runtime in
+                        ForEach([RuntimeKind.java8, .java17, .java21], id: \.self) { runtime in
                             Text(runtime.rawValue).tag(runtime)
                         }
                     }
+
+                    Button("Import OpenJDK runtime folder") {
+                        showingRuntimeImporter = true
+                    }
+
                     LabeledContent("Status", value: status)
                 }
 
-                Section("Files") {
+                Section("Applications") {
                     Button {
-                        showingImporter = true
+                        showingFileImporter = true
                     } label: {
-                        Label("Import EXE, JAR, or file", systemImage: "square.and.arrow.down")
+                        Label("Import EXE or JAR", systemImage: "square.and.arrow.down")
                     }
 
                     if importedFiles.isEmpty {
@@ -62,11 +68,18 @@ struct ContentView: View {
             .navigationTitle("Runtime")
         }
         .fileImporter(
-            isPresented: $showingImporter,
+            isPresented: $showingFileImporter,
             allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
             handleImport(result)
+        }
+        .fileImporter(
+            isPresented: $showingRuntimeImporter,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            handleRuntimeImport(result)
         }
         .alert("Runtime App", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
@@ -75,7 +88,25 @@ struct ContentView: View {
         }
         .onAppear {
             importedFiles = profileStore.load()
-            status = importedFiles.isEmpty ? "Ready" : "(importedFiles.count) profile(s) loaded"
+            status = importedFiles.isEmpty ? "Ready" : "\(importedFiles.count) profile(s) loaded"
+        }
+    }
+
+    private func handleRuntimeImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                errorMessage = error.localizedDescription
+                showingError = true
+            }
+            return
+        }
+
+        do {
+            try JavaRuntimeManager.shared.installImportedRuntime(from: url, kind: selectedRuntime)
+            status = "\(selectedRuntime.rawValue) runtime installed"
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
         }
     }
 
@@ -89,12 +120,11 @@ struct ContentView: View {
                 do {
                     let importedURL = try FileImporterService.shared.importFile(from: url)
                     let kind = runtimeKind(for: importedURL)
-                    let profile = RuntimeProfile(
+                    newProfiles.append(RuntimeProfile(
                         name: importedURL.deletingPathExtension().lastPathComponent,
                         kind: kind,
                         fileName: importedURL.lastPathComponent
-                    )
-                    newProfiles.append(profile)
+                    ))
                 } catch {
                     failures += 1
                 }
@@ -103,7 +133,7 @@ struct ContentView: View {
             importedFiles.append(contentsOf: newProfiles)
             do {
                 try profileStore.save(importedFiles)
-                status = "(newProfiles.count) imported" + (failures > 0 ? ", (failures) failed" : "")
+                status = "\(newProfiles.count) imported" + (failures > 0 ? ", \(failures) failed" : "")
             } catch {
                 errorMessage = "The files imported, but profiles could not be saved: \(error.localizedDescription)"
                 showingError = true
@@ -116,18 +146,11 @@ struct ContentView: View {
     }
 
     private func runtimeKind(for url: URL) -> RuntimeKind {
-        switch url.pathExtension.lowercased() {
-        case "exe":
-            return .windows
-        case "jar":
-            return selectedRuntime
-        default:
-            return selectedRuntime
-        }
+        url.pathExtension.lowercased() == "exe" ? .windows : selectedRuntime
     }
 
     private func launch(_ profile: RuntimeProfile) {
-        status = "Launching (profile.name)…"
+        status = "Launching \(profile.name)…"
         let backend: RuntimeBackend = profile.kind == .windows
             ? WindowsBackend()
             : JavaBackend(kind: profile.kind)
@@ -135,10 +158,10 @@ struct ContentView: View {
         Task {
             do {
                 try await backend.launch(profile: profile)
-                await MainActor.run { status = "Running (profile.name)" }
+                await MainActor.run { status = "Running \(profile.name)" }
             } catch {
                 await MainActor.run {
-                    status = "Backend not ready"
+                    status = "Launch failed"
                     errorMessage = error.localizedDescription
                     showingError = true
                 }
